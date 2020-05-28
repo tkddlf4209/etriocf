@@ -68,8 +68,17 @@ class Resource
     protected:
 	OCResourceHandle m_resourceHandle;
 	OCRepresentation m_rep;
-	std::shared_ptr<OC::OCResource> m_resource;
 	virtual OCEntityHandlerResult entityHandler(std::shared_ptr<OCResourceRequest> request)=0;
+
+    public:
+	void unregisterResource(){
+	    OCStackResult result = OCPlatform::unregisterResource(m_resourceHandle);
+	    if(OC_STACK_OK != result)
+	    {
+		 throw std::runtime_error(
+		       std::string("Device Resource failed to unregister/delete") + std::to_string(result));
+	    }
+	}
 };
 
 
@@ -129,12 +138,18 @@ class DeviceResource : public Resource
 		m_rep.setResourceInterfaces(resourceInterfaces);
 	    }
 	}
+
+	~DeviceResource(){
+	    std::cout << "DeviceResource 소멸자 호출" << std::endl;
+	}
     //private:
 	OCRepresentation get()
 	{
 	    m_rep.setValue("value",mValue);
 	    return m_rep;
 	}
+
+
 
     protected:
 	virtual OCEntityHandlerResult entityHandler(std::shared_ptr<OCResourceRequest> request)
@@ -221,6 +236,13 @@ class DcResource : public Resource
 	    }
 	}
 
+	~DcResource(){
+	    std::cout << "DcResource 소멸자호출" << std::endl;
+	    unregisterResource();
+	    mDeviceResource -> unregisterResource();
+	    delete mDeviceResource;
+	}
+
 	void bindResource(DeviceResource &deviceResource){
 	    mDeviceResource = &deviceResource;
 	}
@@ -235,6 +257,7 @@ class DcResource : public Resource
 	{
 	    rep.getValue("value", mValue);
 	}
+
 
     protected:
 	virtual OCEntityHandlerResult entityHandler(std::shared_ptr<OCResourceRequest> request)
@@ -295,9 +318,9 @@ class DcResource : public Resource
 class DeviceServerResource:public Resource
 {
     public:
-	std::map<std::string,DcResource> *mLocalDcResource;
+	std::map<std::string,DcResource*> *mLocalDcResource;
 
-	DeviceServerResource(std::map<std::string,DcResource> &localDcResource)
+	DeviceServerResource(std::map<std::string,DcResource*> &localDcResource)
 	{
 
 
@@ -340,8 +363,8 @@ class DeviceServerResource:public Resource
 	    m_rep.clearChildren();
 	    for(auto it = mLocalDcResource -> begin();it!= mLocalDcResource-> end();it++){
 		auto dc = it->second;
-		m_rep.addChild(dc.get());
-		m_rep.addChild(dc.mDeviceResource -> get());
+		m_rep.addChild(dc->get());
+		m_rep.addChild(dc->mDeviceResource -> get());
 
 	    }
 	}
@@ -498,7 +521,9 @@ std::vector<string> getAvailableDevices(){
 
 }
 
-std::map<std::string,DcResource> localDcResource;
+
+
+std::map<std::string,DcResource*> localDcResource;
 int main (){ 
 
     int input;
@@ -556,8 +581,10 @@ int main (){
 		DcResource *dc =::new DcResource(devices[i],false);
 		DeviceResource *dv = ::new DeviceResource(devices[i],*dc);
 		dc->bindResource(*dv);
-		localDcResource.insert(pair<std::string,DcResource>(devices[i],*dc));
+		localDcResource.insert(pair<std::string,DcResource*>(devices[i],dc));
 	    }
+
+	    
 
 	    //register DeviceServer resource
 	    DeviceServerResource *ds = new DeviceServerResource(localDcResource);
@@ -565,6 +592,9 @@ int main (){
 	    std::cout << "invalid value\n";
 	}
 
+	/*DcResource* d = localDcResource.at(DEVICE_FAN);	
+	localDcResource.erase(DEVICE_FAN);
+	delete d;*/
 
 	//DeletePlatformInfo();
 	if(input ==1 || input ==2){
