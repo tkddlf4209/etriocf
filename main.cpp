@@ -66,10 +66,10 @@ OCPlatformInfo platformInfo;
 class Resource
 {
     protected:
-    OCResourceHandle m_resourceHandle;
-    OCRepresentation m_rep;
-    std::shared_ptr<OC::OCResource> m_resource;
-    virtual OCEntityHandlerResult entityHandler(std::shared_ptr<OCResourceRequest> request)=0;
+	OCResourceHandle m_resourceHandle;
+	OCRepresentation m_rep;
+	std::shared_ptr<OC::OCResource> m_resource;
+	virtual OCEntityHandlerResult entityHandler(std::shared_ptr<OCResourceRequest> request)=0;
 };
 
 
@@ -77,278 +77,318 @@ class DcResource;
 class DeviceResource : public Resource
 {
     public:
-    int mValue;
-    DcResource *mDcResource;
+	int mValue;
+	DcResource *mDcResource;
 
-    DeviceResource(std::string device, DcResource* dcResource)
-    {
-        mDcResource = dcResource;
-	std::string resourceURI = RESOURCE_URI_DEVICE+device;
-        std::string resourceTypeName = RESOURCE_TYPE_DEVICE;
-        std::string resourceInterface = DEFAULT_INTERFACE;
-        //m_rep = rep;
-	EntityHandler cb = std::bind(&DeviceResource::entityHandler, this,PH::_1);
-        uint8_t resourceProperty = OC_DISCOVERABLE | OC_OBSERVABLE;
-	
-	/*if(rep != NULL){
-	    delete m_rep;
-	    m_rep = *rep;
-	    m_rep.getValue("mValue",mValue);
-	    std::cout << "Test" <<std::endl;
-	    std::cout << mValue << std::endl;
-	    m_resource = OC::OCPlatform::constructResourceObject(
-		    res->host(),
-		    res->uri(),
-                    res->connectivityType(),
-		    false,
-		    rep->getResourceTypes(),
-                    rep->getResourceInterfaces());
-	    
-	}else{
-	  mValue =14;  
-	}*/
+	DeviceResource(std::string device, DcResource& dcResource)
+	{
+	    mDcResource = &dcResource;
+	    std::string resourceURI = RESOURCE_URI_DEVICE+device;
+	    std::string resourceTypeName = RESOURCE_TYPE_DEVICE;
+	    std::string resourceInterface = DEFAULT_INTERFACE;
+	    //m_rep = rep;
+	    EntityHandler cb = std::bind(&DeviceResource::entityHandler, this,PH::_1);
+	    uint8_t resourceProperty = OC_DISCOVERABLE | OC_OBSERVABLE;
 
-	mValue = 14;
+	    /*if(rep != NULL){
+	      delete m_rep;
+	      m_rep = *rep;
+	      m_rep.getValue("mValue",mValue);
+	      std::cout << "Test" <<std::endl;
+	      std::cout << mValue << std::endl;
+	      m_resource = OC::OCPlatform::constructResourceObject(
+	      res->host(),
+	      res->uri(),
+	      res->connectivityType(),
+	      false,
+	      rep->getResourceTypes(),
+	      rep->getResourceInterfaces());
 
+	      }else{
+	      mValue =14;  
+	      }*/
 
-        OCStackResult result = OCPlatform::registerResource(m_resourceHandle,
-            resourceURI,
-            resourceTypeName,
-            resourceInterface,
-            cb,
-            resourceProperty);
+	    OCStackResult result = OCPlatform::registerResource(m_resourceHandle,
+		    resourceURI,
+		    resourceTypeName,
+		    resourceInterface,
+		    cb,
+		    resourceProperty);
 
-        if(OC_STACK_OK != result)
-        {
-            throw std::runtime_error(
-                std::string("Light Resource failed to start")+std::to_string(result));
+	    if(OC_STACK_OK != result)
+	    {
+		throw std::runtime_error(
+			std::string("Light Resource failed to start")+std::to_string(result));
+	    }else{
+		mValue =99;
+		std::vector<std::string> resourceTypes = {resourceTypeName};
+		std::vector<std::string> resourceInterfaces = {resourceInterface};
+		
+		m_rep.setUri(resourceURI);
+		m_rep.setResourceTypes(resourceTypes);
+		m_rep.setResourceInterfaces(resourceInterfaces);
+	    }
 	}
-    }
-    private:
-    OCRepresentation get()
-    {
-        m_rep.setValue("value",mValue);
-	return m_rep;
-    }
+    //private:
+	OCRepresentation get()
+	{
+	    m_rep.setValue("value",mValue);
+	    return m_rep;
+	}
 
     protected:
-    virtual OCEntityHandlerResult entityHandler(std::shared_ptr<OCResourceRequest> request)
-    {
-        OCEntityHandlerResult ehResult = OC_EH_ERROR;
-        if(request)
-        {
-            std::cout << "In entity handler for DeviceResource, URI is : "
-                      << request->getResourceUri() << std::endl;
+	virtual OCEntityHandlerResult entityHandler(std::shared_ptr<OCResourceRequest> request)
+	{
+	    OCEntityHandlerResult ehResult = OC_EH_ERROR;
+	    if(request)
+	    {
+		std::cout << "In entity handler for DeviceResource, URI is : "
+		    << request->getResourceUri() << std::endl;
 
-            if(request->getRequestHandlerFlag() == RequestHandlerFlag::RequestFlag)
-            {
-                auto pResponse = std::make_shared<OC::OCResourceResponse>();
-                pResponse->setRequestHandle(request->getRequestHandle());
-                pResponse->setResourceHandle(request->getResourceHandle());
+		if(request->getRequestHandlerFlag() == RequestHandlerFlag::RequestFlag)
+		{
+		    auto pResponse = std::make_shared<OC::OCResourceResponse>();
+		    pResponse->setRequestHandle(request->getRequestHandle());
+		    pResponse->setResourceHandle(request->getResourceHandle());
 
-                if(request->getRequestType() == "GET")
-                {
-                    std::cout<<"DeviceResource Get Request"<<std::endl;
-                    pResponse->setResourceRepresentation(get());
-                    if(OC_STACK_OK == OCPlatform::sendResponse(pResponse))
-                    {
+		    if(request->getRequestType() == "GET")
+		    {
+			std::cout<<"DeviceResource Get Request"<<std::endl;
+			pResponse->setResourceRepresentation(get());
+			if(OC_STACK_OK == OCPlatform::sendResponse(pResponse))
+			{
 
-                        ehResult = OC_EH_OK;
-                    }
-                }
-                else
-                {
-                    std::cout << "DeviceResource unsupported request type"
-                    << request->getRequestType() << std::endl;
-                    pResponse->setResponseResult(OC_EH_ERROR);
-                    OCPlatform::sendResponse(pResponse);
-                    ehResult = OC_EH_ERROR;
-                }
-            }
-            else
-            {
-                std::cout << "DeviceResource unsupported request flag" <<std::endl;
-            }
-        }
+			    ehResult = OC_EH_OK;
+			}
+		    }
+		    else
+		    {
+			std::cout << "DeviceResource unsupported request type"
+			    << request->getRequestType() << std::endl;
+			pResponse->setResponseResult(OC_EH_ERROR);
+			OCPlatform::sendResponse(pResponse);
+			ehResult = OC_EH_ERROR;
+		    }
+		}
+		else
+		{
+		    std::cout << "DeviceResource unsupported request flag" <<std::endl;
+		}
+	    }
 
-        return ehResult;
-    }
+	    return ehResult;
+	}
 };
 
 class DcResource : public Resource
 {
     public:
-    bool mValue;
-    std::string mDevice;
-    DeviceResource *deviceResource;
+	bool mValue;
+	std::string mDevice;
+	DeviceResource *mDeviceResource;
 
-    DcResource(std::string device,bool enable)
-    {
-        
-	std::string resourceURI = RESOURCE_URI_MANAGEMENT+device;
-        std::string resourceTypeName = RESOURCE_TYPE_MANAGEMENT;
-        std::string resourceInterface = DEFAULT_INTERFACE;
-	mDevice = device;
-	EntityHandler cb = std::bind(&DcResource::entityHandler, this,PH::_1);
-        uint8_t resourceProperty = OC_DISCOVERABLE | OC_OBSERVABLE;
+	DcResource(std::string device,bool enable)
+	{
 
-	mValue = enable;
+	    std::string resourceURI = RESOURCE_URI_MANAGEMENT+device;
+	    std::string resourceTypeName = RESOURCE_TYPE_MANAGEMENT;
+	    std::string resourceInterface = DEFAULT_INTERFACE;
+	    mDevice = device;
+	    EntityHandler cb = std::bind(&DcResource::entityHandler, this,PH::_1);
+	    uint8_t resourceProperty = OC_DISCOVERABLE | OC_OBSERVABLE;
 
-        OCStackResult result = OCPlatform::registerResource(m_resourceHandle,
-            resourceURI,
-            resourceTypeName,
-            resourceInterface,
-            cb,
-            resourceProperty);
 
-        if(OC_STACK_OK != result)
-        {
-            throw std::runtime_error(
-                std::string("DcResource failed to start")+std::to_string(result));
+	    OCStackResult result = OCPlatform::registerResource(m_resourceHandle,
+		    resourceURI,
+		    resourceTypeName,
+		    resourceInterface,
+		    cb,
+		    resourceProperty);
+
+	    if(OC_STACK_OK != result)
+	    {
+		throw std::runtime_error(
+			std::string("DcResource failed to start")+std::to_string(result));
+	    }else{
+		mValue = enable; 
+		std::vector<std::string> resourceTypes = {resourceTypeName};
+		std::vector<std::string> resourceInterfaces = {resourceInterface};
+		
+		m_rep.setUri(resourceURI);
+		m_rep.setResourceTypes(resourceTypes);
+		m_rep.setResourceInterfaces(resourceInterfaces);
+	    
+	    }
 	}
-    }
-    private:
-    OCRepresentation get()
-    {
-        m_rep.setValue("value",mValue);
-	return m_rep;
-    }
 
-    void put(const OCRepresentation& rep)
-    {
-        rep.getValue("value", mValue);
-    }
+	void bindResource(DeviceResource &deviceResource){
+	    mDeviceResource = &deviceResource;
+	}
+   // private:
+	OCRepresentation get()
+	{
+	    m_rep.setValue("value",mValue);
+	    return m_rep;
+	}
+
+	void put(const OCRepresentation& rep)
+	{
+	    rep.getValue("value", mValue);
+	}
 
     protected:
-    virtual OCEntityHandlerResult entityHandler(std::shared_ptr<OCResourceRequest> request)
-    {
-        OCEntityHandlerResult ehResult = OC_EH_ERROR;
-        if(request)
-        {
-            std::cout << "In entity handler for DcResource, URI is : "
-                      << request->getResourceUri() << std::endl;
+	virtual OCEntityHandlerResult entityHandler(std::shared_ptr<OCResourceRequest> request)
+	{
+	    OCEntityHandlerResult ehResult = OC_EH_ERROR;
+	    if(request)
+	    {
+		std::cout << "In entity handler for DcResource, URI is : "
+		    << request->getResourceUri() << std::endl;
 
-            if(request->getRequestHandlerFlag() == RequestHandlerFlag::RequestFlag)
-            {
-                auto pResponse = std::make_shared<OC::OCResourceResponse>();
-                pResponse->setRequestHandle(request->getRequestHandle());
-                pResponse->setResourceHandle(request->getResourceHandle());
+		if(request->getRequestHandlerFlag() == RequestHandlerFlag::RequestFlag)
+		{
+		    auto pResponse = std::make_shared<OC::OCResourceResponse>();
+		    pResponse->setRequestHandle(request->getRequestHandle());
+		    pResponse->setResourceHandle(request->getResourceHandle());
 
-                if(request->getRequestType() == "GET")
-                {
-                    std::cout<<"DcResource Get Request"<<std::endl;
-                    pResponse->setResourceRepresentation(get());
-                    if(OC_STACK_OK == OCPlatform::sendResponse(pResponse))
-                    {
+		    if(request->getRequestType() == "GET")
+		    {
+			std::cout<<"DcResource Get Request"<<std::endl;
+			pResponse->setResourceRepresentation(get());
+			if(OC_STACK_OK == OCPlatform::sendResponse(pResponse))
+			{
 
-                        ehResult = OC_EH_OK;
-                    }
-                }
-                else if(request->getRequestType() == "PUT")
-                {
-                    std::cout <<"DcResource Put Request"<<std::endl;
-                    put(request->getResourceRepresentation());
+			    ehResult = OC_EH_OK;
+			}
+		    }
+		    else if(request->getRequestType() == "PUT")
+		    {
+			std::cout <<"DcResource Put Request"<<std::endl;
+			put(request->getResourceRepresentation());
 
-                    pResponse->setResourceRepresentation(get());
-                    if(OC_STACK_OK == OCPlatform::sendResponse(pResponse))
-                    {
-                        ehResult = OC_EH_OK;
-                    }
-                }
-                else
-                {
-                    std::cout << "DcResource unsupported request type"
-                    << request->getRequestType() << std::endl;
-                    pResponse->setResponseResult(OC_EH_ERROR);
-                    OCPlatform::sendResponse(pResponse);
-                    ehResult = OC_EH_ERROR;
-                }
-            }
-            else
-            {
-                std::cout << "DcResource unsupported request flag" <<std::endl;
-            }
-        }
+			pResponse->setResourceRepresentation(get());
+			if(OC_STACK_OK == OCPlatform::sendResponse(pResponse))
+			{
+			    ehResult = OC_EH_OK;
+			}
+		    }
+		    else
+		    {
+			std::cout << "DcResource unsupported request type"
+			    << request->getRequestType() << std::endl;
+			pResponse->setResponseResult(OC_EH_ERROR);
+			OCPlatform::sendResponse(pResponse);
+			ehResult = OC_EH_ERROR;
+		    }
+		}
+		else
+		{
+		    std::cout << "DcResource unsupported request flag" <<std::endl;
+		}
+	    }
 
-        return ehResult;
-    }
+	    return ehResult;
+	}
 };
 
 
 class DeviceServerResource:public Resource
 {
     public:
-	//std::shared_ptr<std::map<std::string,DcResource>> localDcResource;
+	std::map<std::string,DcResource> *mLocalDcResource;
 
-    DeviceServerResource(std::map<std::string,DcResource> &localDcResource)
-    {
-	std::string resourceURI = RESOURCE_URI_SERVER;
-        std::string resourceTypeName = RESOURCE_TYPE_SERVER;
-        std::string resourceInterface = DEFAULT_INTERFACE;
-	EntityHandler cb = std::bind(&DeviceServerResource::entityHandler, this,PH::_1);
-        uint8_t resourceProperty = OC_DISCOVERABLE | OC_OBSERVABLE;
+	DeviceServerResource(std::map<std::string,DcResource> &localDcResource)
+	{
 
-        OCStackResult result = OCPlatform::registerResource(m_resourceHandle,
-            resourceURI,
-            resourceTypeName,
-            resourceInterface,
-            cb,
-            resourceProperty);
 
-        if(OC_STACK_OK != result)
-        {
-            throw std::runtime_error(
-                std::string("DeviceServerResource failed to start")+std::to_string(result));
+	    mLocalDcResource = &localDcResource;
+	    std::string resourceURI = RESOURCE_URI_SERVER;
+	    std::string resourceTypeName = RESOURCE_TYPE_SERVER;
+	    std::string resourceInterface = DEFAULT_INTERFACE;
+	    EntityHandler cb = std::bind(&DeviceServerResource::entityHandler, this,PH::_1);
+	    uint8_t resourceProperty = OC_DISCOVERABLE | OC_OBSERVABLE;
+
+	    OCStackResult result = OCPlatform::registerResource(m_resourceHandle,
+		    resourceURI,
+		    resourceTypeName,
+		    resourceInterface,
+		    cb,
+		    resourceProperty);
+
+	    if(OC_STACK_OK != result)
+	    {
+		throw std::runtime_error(
+			std::string("DeviceServerResource failed to start")+std::to_string(result));
+	    }else{
+
+		std::vector<std::string> resourceTypes = {resourceTypeName};
+		std::vector<std::string> resourceInterfaces = {resourceInterface};
+		
+		m_rep.setUri(resourceURI);
+		m_rep.setResourceTypes(resourceTypes);
+		m_rep.setResourceInterfaces(resourceInterfaces);
+	    
+	    }
 	}
-    }
-    private:
-    OCRepresentation get()
-    {
-	return m_rep;
-    }
+   // private:
+	OCRepresentation get()
+	{
+	    return m_rep;
+	}
+
+	void updateChildren(){
+	    m_rep.clearChildren();
+	    for(auto it = mLocalDcResource -> begin();it!= mLocalDcResource-> end();it++){
+		auto dc = it->second;
+		m_rep.addChild(dc.get());
+		m_rep.addChild(dc.mDeviceResource -> get());
+
+	    }
+	}
 
     protected:
-    virtual OCEntityHandlerResult entityHandler(std::shared_ptr<OCResourceRequest> request)
-    {
-        OCEntityHandlerResult ehResult = OC_EH_ERROR;
-        if(request)
-        {
-            std::cout << "In entity handler for DeviceServerResource, URI is : "
-                      << request->getResourceUri() << std::endl;
+	virtual OCEntityHandlerResult entityHandler(std::shared_ptr<OCResourceRequest> request)
+	{
+	    OCEntityHandlerResult ehResult = OC_EH_ERROR;
+	    if(request)
+	    {
+		std::cout << "In entity handler for DeviceServerResource, URI is : "
+		    << request->getResourceUri() << std::endl;
 
-            if(request->getRequestHandlerFlag() == RequestHandlerFlag::RequestFlag)
-            {
-                auto pResponse = std::make_shared<OC::OCResourceResponse>();
-                pResponse->setRequestHandle(request->getRequestHandle());
-                pResponse->setResourceHandle(request->getResourceHandle());
+		if(request->getRequestHandlerFlag() == RequestHandlerFlag::RequestFlag)
+		{
+		    auto pResponse = std::make_shared<OC::OCResourceResponse>();
+		    pResponse->setRequestHandle(request->getRequestHandle());
+		    pResponse->setResourceHandle(request->getResourceHandle());
 
-                if(request->getRequestType() == "GET")
-                {
-                    std::cout<<"DeviceServerResource Get Request"<<std::endl;
-                    pResponse->setResourceRepresentation(get());
-                    if(OC_STACK_OK == OCPlatform::sendResponse(pResponse))
-                    {
+		    if(request->getRequestType() == "GET")
+		    {
+			std::cout<<"DeviceServerResource Get Request"<<std::endl;
+			updateChildren();
+			pResponse->setResourceRepresentation(get());
+			if(OC_STACK_OK == OCPlatform::sendResponse(pResponse))
+			{
 
-                        ehResult = OC_EH_OK;
-                    }
-                }
-                else
-                {
-                    std::cout << "DeviceServerResource unsupported request type"
-                    << request->getRequestType() << std::endl;
-                    pResponse->setResponseResult(OC_EH_ERROR);
-                    OCPlatform::sendResponse(pResponse);
-                    ehResult = OC_EH_ERROR;
-                }
-            }
-            else
-            {
-                std::cout << "DeviceServerResource unsupported request flag" <<std::endl;
-            }
-        }
+			    ehResult = OC_EH_OK;
+			}
+		    }
+		    else
+		    {
+			std::cout << "DeviceServerResource unsupported request type"
+			    << request->getRequestType() << std::endl;
+			pResponse->setResponseResult(OC_EH_ERROR);
+			OCPlatform::sendResponse(pResponse);
+			ehResult = OC_EH_ERROR;
+		    }
+		}
+		else
+		{
+		    std::cout << "DeviceServerResource unsupported request flag" <<std::endl;
+		}
+	    }
 
-        return ehResult;
-    }
+	    return ehResult;
+	}
 
 };
 void DuplicateString(char ** targetString, std::string sourceString)
@@ -459,15 +499,22 @@ std::vector<string> getAvailableDevices(){
 }
 
 std::map<std::string,DcResource> localDcResource;
-int main (){
+int main (){ 
+
+    int input;
+
+    std::cout << "    1 - AgentServer\n";
+    std::cout << "    2 - DeviceServer\n";
+    std::cin >> input; 
+
 
     PlatformConfig cfg(
 	    OC::ServiceType::InProc,
-	    OC::ModeType::Server,
+	    OC::ModeType::Both,
 	    nullptr
 	    );
-    // cfg.transportType = static_cast<OCTransportAdapter>(OCTransportAdapter::OC_ADAPTER_IP | OCTransportAdapter::OC_ADAPTER_TCP);
-    //cfg.QoS = OC::QualityOfService::LowQos;
+    cfg.transportType = static_cast<OCTransportAdapter>(OCTransportAdapter::OC_ADAPTER_IP | OCTransportAdapter::OC_ADAPTER_TCP);
+    cfg.QoS = OC::QualityOfService::LowQos;
     OCPlatform::Configure(cfg);
 
 
@@ -478,16 +525,16 @@ int main (){
 
 
 	/*OCStackResult result = SetPlatformInfo(gPlatformId, gManufacturerName, gManufacturerLink,
-		gModelNumber, gDateOfManufacture, gPlatformVersion, gOperatingSystemVersion,
-		gHardwareVersion, gFirmwareVersion, gSupportLink, gSystemTime);
+	  gModelNumber, gDateOfManufacture, gPlatformVersion, gOperatingSystemVersion,
+	  gHardwareVersion, gFirmwareVersion, gSupportLink, gSystemTime);
 
-	result = OCPlatform::registerPlatformInfo(platformInfo);
+	  result = OCPlatform::registerPlatformInfo(platformInfo);
 
-	if(result != OC_STACK_OK){
-	    cout <<  "Platform Registration failed\n";
-	    return -1;
-	}
-	*/
+	  if(result != OC_STACK_OK){
+	  cout <<  "Platform Registration failed\n";
+	  return -1;
+	  }
+	  */
 
 	OCStackResult result = SetDeviceInfo();
 
@@ -496,25 +543,37 @@ int main (){
 	    return -1;
 	}	    
 
-	auto devices = getAvailableDevices();
-	for(int i =0 ; i<devices.size();i++){
-	    std::cout<< devices[i] <<" registered" <<std::endl;
-	    
-	    DcResource *d =::new DcResource(devices[i],false);
-	    localDcResource.insert(pair<std::string,DcResource>(devices[i],*d));
+	if(input == 1){
+	    std::cout << "Agent Server Resource Generating... \n";
+	}else if(input ==2){
+
+	    std::cout << "Device Server Resource Generating... \n";
+	    // register local resources
+	    auto devices = getAvailableDevices();
+	    for(int i =0 ; i<devices.size();i++){
+		std::cout<< devices[i] <<" registered" <<std::endl;
+
+		DcResource *dc =::new DcResource(devices[i],false);
+		DeviceResource *dv = ::new DeviceResource(devices[i],*dc);
+		dc->bindResource(*dv);
+		localDcResource.insert(pair<std::string,DcResource>(devices[i],*dc));
+	    }
+
+	    //register DeviceServer resource
+	    DeviceServerResource *ds = new DeviceServerResource(localDcResource);
+	}else{
+	    std::cout << "invalid value\n";
 	}
 
 
-	DeviceServerResource c(localDcResource);
-
-	DeletePlatformInfo();
-
-	std::mutex blocker;
-	std::condition_variable cv;
-	std::unique_lock<std::mutex> lock(blocker);
-	//std::cout <<"Waiting" << std::endl;
-	cv.wait(lock, []{return false;});
-
+	//DeletePlatformInfo();
+	if(input ==1 || input ==2){
+	    std::mutex blocker;
+	    std::condition_variable cv;
+	    std::unique_lock<std::mutex> lock(blocker);
+	    //std::cout <<"Waiting" << std::endl;
+	    cv.wait(lock, []{return false;});
+	}
 
 	//std::cout << "waiting. Press \"Enter\""<< std::endl;
 	// Ignoring all input except for EOL.
