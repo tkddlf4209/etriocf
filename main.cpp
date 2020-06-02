@@ -550,7 +550,10 @@ class RemoteResource{
 		else
 		{
 		    std::cout << "RemoteResource onGET Response error: " << eCode << std::endl;
-		    std::exit(-1);
+		    timestamp = 0;
+		    //remoteResource.erase(mDevice);
+		    //delete this;
+		    //std::exit(-1);
 		}
 	    }
 	    catch(std::exception& e)
@@ -737,7 +740,7 @@ void onGet(const HeaderOptions& headerOptions, const OCRepresentation& rep,int e
 	if(eCode == OC_STACK_OK)
 
 	{
-	    std::cout << "GET request was successful" << std::endl;
+	    std::cout << "GET server request was successful" << std::endl;
 	    //std::cout << "Resource URI: " << rep.getUri() << std::endl;
 	    //std::cout << "HOST : " << rep.getHost() << std::endl;
 	    //std::cout << "Interface : " << rep.getHost() << std::endl;
@@ -813,7 +816,7 @@ void foundResource(std::shared_ptr<OCResource> resource)
 	    {
 		//new registerTask(resource);
 		QueryParamsMap q;
-		resource -> get(q,&onGet);
+		resource -> get(q,&onGet,OC::QualityOfService::LowQos);
 
 		//std::cout << "\tAddress of selected resource: " << resource->host() << std::endl;
 	    }
@@ -838,9 +841,11 @@ void * scanDeviceServerResource(void *param){
     requestURI << OC_RSRVD_WELL_KNOWN_URI << "?rt="+ RESOURCE_TYPE_SERVER;
 
     while(1){
+      	
+
 	std::cout << "---- start findResource! ----\n";
 	OCPlatform::findResource("",requestURI.str(),CT_DEFAULT,&foundResource);
-      	
+	// remove do not response RemoteResource
 	std::vector<RemoteResource*> rm_v;
 	for(auto it = remoteResource.begin();it!= remoteResource.end();it++){
 	    auto rr = it->second;
@@ -857,7 +862,7 @@ void * scanDeviceServerResource(void *param){
 	    remoteResource.erase(rm_v[i]->mDevice);
 	    delete rm_v[i];
 	}
-
+	
 	sleep(10);
     }
 
