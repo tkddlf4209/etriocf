@@ -56,6 +56,12 @@ std::string gFirmwareVersion = "1.0";
 std::string gSupportLink = "https://www.iotivity.org";
 std::string gSystemTime = "2016-01-15T11.01";
 
+// Set of strings for each of device info fields
+std::string  deviceName = "Device Server";
+std::string  deviceType = RESOURCE_TYPE_SERVER;
+std::string  specVersion = "1.0.0";
+std::vector<std::string> dataModelVersions = { "etri.ocf.1.0.0"};
+std::string  protocolIndependentID = "fa008167-3bbf-4c9d-8604-c9bcb96cb712";
 
 // OCPlatformInfo Contains all the platform info to be stored
 OCPlatformInfo platformInfo;
@@ -65,6 +71,7 @@ class RemoteResource;
 std::map<std::string,DcResource*> localDcResource;
 std::map<std::string,RemoteResource*> remoteResource;
 
+std::mutex curResourceLock;
 long now(){
     auto timeInMilis = std::time(nullptr);
     return timeInMilis;
@@ -147,8 +154,7 @@ class DeviceResource : public Resource
 	    OCEntityHandlerResult ehResult = OC_EH_ERROR;
 	    if(request)
 	    {
-		std::cout << "In entity handler for DeviceResource, URI is : "
-		    << request->getResourceUri() << std::endl;
+		std::cout << "In entity handler for DeviceResource, URI is : " << request->getResourceUri() << std::endl;
 
 		if(request->getRequestHandlerFlag() == RequestHandlerFlag::RequestFlag)
 		{
@@ -420,6 +426,9 @@ class RemoteResource{
 	OCRepresentation mRep_device;
 	OCRepresentation mRep_manage;	
 
+	PutCallback p_cb = std::bind(&RemoteResource::onPut, this,PH::_1,PH::_2,PH::_3);
+	GetCallback g_cb = std::bind(&RemoteResource::onGet, this,PH::_1,PH::_2,PH::_3);
+	
 	RemoteResource(OCRepresentation &rep_device, OCRepresentation &rep_manage, std::string host) {
 	    isRaspberry = true;
 	    mRep_device = rep_device;
@@ -441,11 +450,53 @@ class RemoteResource{
 
 	}
 
+	OCRepresentation getDeviceRep(){
+	    return mRep_device;
+	}
 
+	OCRepresentation getManageRep(){
+	    return mRep_manage;
+	}
+
+	OCResource::Ptr getDevicePtr(){
+	    return device;
+	}
+
+	OCResource::Ptr getManagePtr(){
+	    return manage;
+	}
+
+
+	void * startDeviceValue(void * data){
+	  
+	  /*while(1){
+		if(device){
+		    QueryParamsMap q;
+		    device -> get(q,g_cb);
+		}else{
+		    std::cout << "Error: DEVICEResource Object construction returned null\n";
+		}
+		sleep(10);
+
+	    }*/
+	}
+
+	void requestPut(OCResource::Ptr ptr,OCRepresentation &rep){ 
+	    QueryParamsMap q;
+	    ptr->put(rep,q,p_cb,OC::QualityOfService::LowQos);
+	}
+
+	void requestGet(OCResource::Ptr ptr){
+	    QueryParamsMap q;
+	    ptr->get(q,g_cb,OC::QualityOfService::LowQos);
+	}
+
+
+	
 	void createConstructResourceObject(OCRepresentation &rep, bool isDevice){
 	    OCConnectivityType connectivityType = CT_ADAPTER_IP;
-	    PutCallback cb = std::bind(&RemoteResource::onPut, this,PH::_1,PH::_2,PH::_3);
 
+	   
 	    if(isDevice){
 		device = OC::OCPlatform::constructResourceObject(
 			mHost,
@@ -454,9 +505,11 @@ class RemoteResource{
 			false,
 			rep.getResourceTypes(),
 			rep.getResourceInterfaces());
+		//if(device){
+		//    requestGet(device);
+		//}
 
 	    }else{
-		mRep_manage.setValue("value",true);
 		manage = OC::OCPlatform::constructResourceObject(
 			mHost,
 			rep.getUri(),
@@ -466,11 +519,9 @@ class RemoteResource{
 			rep.getResourceInterfaces());
 
 
-		std::cout << "tttttttttttttttttttttttttttttttttt\n";
-
 		if(manage){
-		    QueryParamsMap q;
-		    manage->put(mRep_manage,q,cb,OC::QualityOfService::LowQos);
+		    mRep_manage.setValue("value",true);
+		    requestPut(manage,mRep_manage);
 		}else{
 		    std::cout << "Error: Resource Object construction returned null\n";
 		}
@@ -481,11 +532,42 @@ class RemoteResource{
 	{
 	    if (eCode == OC_STACK_OK || eCode == OC_STACK_RESOURCE_CHANGED)
 	    {
-	    //std::cout << "PUT request was successful" << std::endl;
+		std::cout << "RemoteResource PUT request was successful uri : "+ rep.getUri() << std::endl;
 	    }
 	    else
 	    {
-	    //std::cout << "onPut Response error: " << eCode << std::endl;
+		std::cout << "RemoteResource onPut Response error: " << eCode << std::endl;
+	    }
+	}
+
+	void onGet(const HeaderOptions& headerOptions, const OCRepresentation& rep,int eCode)
+	{
+	    try
+	    {
+		if(eCode == OC_STACK_OK)
+		{
+		    std::cout << "RemoteResource GET request was successful uri : "+rep.getUri()  << std::endl;
+		    std::string uri(rep.getUri());
+
+		   if(std::string::npos != uri.find(RESOURCE_URI_MANAGEMENT))
+		    {
+			mRep_manage = rep;
+		    }
+
+		    if(std::string::npos != uri.find(RESOURCE_URI_DEVICE))
+		    {
+			mRep_device = rep;
+		    }
+		}
+		else
+		{
+		    std::cout << "RemoteResource onGET Response error: " << eCode << std::endl;
+		    std::exit(-1);
+		}
+	    }
+	    catch(std::exception& e)
+	    {
+		std::cout << "Exception: " << e.what() << " in onGet" << std::endl;
 	    }
 	}
 };
@@ -538,11 +620,12 @@ class AgentServerResource:public Resource
 	    return m_rep;
 	}
 
+
 	void updateChildren(){
 	    m_rep.clearChildren();
 	    for(auto it = mRemoteResource->begin();it!= mRemoteResource->end();it++){
-		auto rr = it->second;
-
+		auto dr = it->second->getDeviceRep();
+		m_rep.addChild(dr);
 	    }
 	}
 
@@ -595,110 +678,7 @@ class AgentServerResource:public Resource
 
 
 
-/*
-   class registerTask
-   {
-   public:
 
-   std::shared_ptr<OCResource> mResource;
-   registerTask(std::shared_ptr<OCResource> &resource){
-   mResource = resource;
-   QueryParamsMap q;
-   GetCallback cb = std::bind(&registerTask::onGet, this,PH::_1,PH::_2,PH::_3);
-   resource -> get(q,cb);
-
-   }
-
-
-// Callback handler on GET request
-void onGet(const HeaderOptions& headerOptions, const OCRepresentation& rep,int eCode)
-{
-try
-{
-if(eCode == OC_STACK_OK)
-
-{
-std::cout << "GET request was successful" << std::endl;
-std::cout << "Resource URI: " << rep.getUri() << std::endl;
-std::cout << "HOST : " << rep.getHost() << std::endl;
-//std::cout << "Interface : " << rep.getHost() << std::endl;
-registerRemoteResource(rep);
-// Get resource header options
-}
-else
-{
-std::cout << "onGET Response error: " << eCode << std::endl;
-std::exit(-1);
-}
-}
-catch(std::exception& e)
-{
-std::cout << "Exception: " << e.what() << " in onGet" << std::endl;
-}
-}
-
-
-
-void registerRemoteResource(const OCRepresentation& rep){ 
-
-std::map<std::string,OCRepresentation> rep_manage;
-std::map<std::string,OCRepresentation> rep_device;
-
-for(const OCRepresentation& r : rep.getChildren())
-{
-std::string uri(r.getUri());
-std::string device = uri.substr(uri.find_last_of("/")+1);
-
-if(std::string::npos != uri.find(RESOURCE_URI_MANAGEMENT))
-{
-rep_manage.insert(pair<std::string,OCRepresentation>(device,r));
-}
-
-if(std::string::npos != uri.find(RESOURCE_URI_DEVICE))
-{
-rep_device.insert(pair<std::string,OCRepresentation>(device,r));
-}
-
-
-//std::cout << rep.getHost() << std::endl;
-//std::cout << r.getHost()<< std::endl;
-//std::cout << rep.getUri() << std::endl;
-//std::cout << r.getUri() << std::endl;
-
-}
-
-for(auto const& element : rep_device){
-    std::string device =  element.first;
-
-    if(rep_manage.count(device)){
-	//rsapberry pi
-	if(!checkResourceAdded(device)){	
-	    RemoteResource *rr = ::new RemoteResource(rep_device.find(device)-> second,rep_manage.find(device) -> second,mResource); 
-	    remoteResource.insert(pair<std::string,RemoteResource*>(device,rr));
-	}else{
-	    remoteResource.find(device) -> second -> timestamp = now();
-
-	}
-
-    }else{
-	//ESP32
-
-    }
-
-} 
-
-}
-
-bool checkResourceAdded(std::string device){
-    bool result = false;
-    if(remoteResource.count(device)){
-	result = true;
-    }
-    return result;
-}
-
-};
-*/
 bool checkResourceAdded(std::string device){
     bool result = false;
     if(remoteResource.count(device)){
@@ -746,7 +726,6 @@ void registerRemoteResource(const OCRepresentation& rep){
 		remoteResource.insert(pair<std::string,RemoteResource*>(device,rr));
 	    }else{
 		remoteResource.find(device) -> second -> timestamp = now();
-
 	    }
 
 	}else{
@@ -766,8 +745,8 @@ void onGet(const HeaderOptions& headerOptions, const OCRepresentation& rep,int e
 
 	{
 	    std::cout << "GET request was successful" << std::endl;
-	    std::cout << "Resource URI: " << rep.getUri() << std::endl;
-	    std::cout << "HOST : " << rep.getHost() << std::endl;
+	    //std::cout << "Resource URI: " << rep.getUri() << std::endl;
+	    //std::cout << "HOST : " << rep.getHost() << std::endl;
 	    //std::cout << "Interface : " << rep.getHost() << std::endl;
 	    registerRemoteResource(rep);
 	    // Get resource header options
@@ -785,13 +764,9 @@ void onGet(const HeaderOptions& headerOptions, const OCRepresentation& rep,int e
 }
 
 
-
-
-std::mutex curResourceLock;
-
 void foundResource(std::shared_ptr<OCResource> resource)
 {
-    std::cout << "In foundResource\n";
+    //std::cout << "In foundResource\n";
     std::string resourceURI;
     std::string hostAddress;
     try
@@ -806,7 +781,8 @@ void foundResource(std::shared_ptr<OCResource> resource)
 	// Do some operations with resource object.
 	if(resource)
 	{
-	    std::cout<<"DISCOVERED Resource:"<<std::endl;
+	    /*
+	       std::cout<<"DISCOVERED Resource:"<<std::endl;
 	    // Get the resource URI
 	    resourceURI = resource->uri();
 	    std::cout << "\tURI of the resource: " << resourceURI << std::endl;
@@ -819,14 +795,14 @@ void foundResource(std::shared_ptr<OCResource> resource)
 	    std::cout << "\tList of resource types: " << std::endl;
 	    for(auto &resourceTypes : resource->getResourceTypes())
 	    {
-		std::cout << "\t\t" << resourceTypes << std::endl;
+	    std::cout << "\t\t" << resourceTypes << std::endl;
 	    }
 
 	    // Get the resource interfaces
 	    std::cout << "\tList of resource interfaces: " << std::endl;
 	    for(auto &resourceInterfaces : resource->getResourceInterfaces())
 	    {
-		std::cout << "\t\t" << resourceInterfaces << std::endl;
+	    std::cout << "\t\t" << resourceInterfaces << std::endl;
 	    }
 
 	    // Get Resource current host
@@ -837,16 +813,16 @@ void foundResource(std::shared_ptr<OCResource> resource)
 	    std::cout << "\tList of resource endpoints: " << std::endl;
 	    for(auto &resourceEndpoints : resource->getAllHosts())
 	    {
-		std::cout << "\t\t" << resourceEndpoints << std::endl;
+	    std::cout << "\t\t" << resourceEndpoints << std::endl;
 	    }
-
+	    */
 	    if(std::string::npos != resource ->uri().find(RESOURCE_URI_SERVER))
 	    {
 		//new registerTask(resource);
 		QueryParamsMap q;
 		resource -> get(q,&onGet);
 
-		std::cout << "\tAddress of selected resource: " << resource->host() << std::endl;
+		//std::cout << "\tAddress of selected resource: " << resource->host() << std::endl;
 	    }
 	}
 	else
@@ -863,12 +839,27 @@ void foundResource(std::shared_ptr<OCResource> resource)
 }
 
 
-void scanDeviceServerResource(){
+void * startDeviceServerResource(void *param){
 
     std::ostringstream requestURI;
     requestURI << OC_RSRVD_WELL_KNOWN_URI << "?rt="+ RESOURCE_TYPE_SERVER;
 
-    OCPlatform::findResource("",requestURI.str(),CT_DEFAULT,&foundResource);
+    while(1){
+	std::cout << "---- start findResource ----\n";
+	OCPlatform::findResource("",requestURI.str(),CT_DEFAULT,&foundResource);
+      	
+	
+	for(auto it = remoteResource.begin();it!= remoteResource.end();it++){
+	    auto rr = it->second;
+	    if(now() - rr->timestamp >= 30){
+		std::cout << "over 30 minute remove remoteResource" << std::endl;
+	    }else{
+		rr -> requestGet( rr->getDevicePtr());
+	    }	
+	}
+
+	sleep(10);
+    }
 
 }
 
@@ -919,12 +910,7 @@ void DeletePlatformInfo()
 
 
 
-// Set of strings for each of device info fields
-std::string  deviceName = "Device Server";
-std::string  deviceType = RESOURCE_TYPE_SERVER;
-std::string  specVersion = "1.0.0";
-std::vector<std::string> dataModelVersions = { "etri.ocf.1.0.0"};
-std::string  protocolIndependentID = "fa008167-3bbf-4c9d-8604-c9bcb96cb712";
+
 OCStackResult SetDeviceInfo(int opt)
 {
     OCStackResult result = OC_STACK_ERROR;
@@ -1011,12 +997,18 @@ void startDeviceServer(){
 }
 
 void startAgentServer(){
-
-    startDeviceServer();
-
     std::cout << "Agent Server Resource Generating... \n";
     AgentServerResource *as = new AgentServerResource(remoteResource);
 
+    pthread_t threadId;
+    static int startedThread = 0;
+
+    if(!startedThread){
+	pthread_create(&threadId,NULL,startDeviceServerResource,(void *)startedThread);
+	startedThread =1;
+    }
+
+    //startDeviceServerResource();
 }
 
 
@@ -1064,8 +1056,8 @@ int main (){
 	    return -1;
 	}	    
 	if(opt == 1){
+	    startDeviceServer();
 	    startAgentServer();
-	    scanDeviceServerResource();
 	}else if(opt ==2){
 	    startDeviceServer();
 	}else{
