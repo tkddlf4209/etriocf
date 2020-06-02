@@ -419,7 +419,7 @@ class RemoteResource{
 	bool isRaspberry;
 	long timestamp = now();
 	std::string mHost;
-
+	std::string mDevice;
 	OCResource::Ptr device;
 	OCResource::Ptr manage;
 
@@ -429,8 +429,9 @@ class RemoteResource{
 	PutCallback p_cb = std::bind(&RemoteResource::onPut, this,PH::_1,PH::_2,PH::_3);
 	GetCallback g_cb = std::bind(&RemoteResource::onGet, this,PH::_1,PH::_2,PH::_3);
 	
-	RemoteResource(OCRepresentation &rep_device, OCRepresentation &rep_manage, std::string host) {
+	RemoteResource(std::string device,OCRepresentation &rep_device, OCRepresentation &rep_manage, std::string host) {
 	    isRaspberry = true;
+	    mDevice = device;
 	    mRep_device = rep_device;
 	    mRep_manage = rep_manage;
 	    mHost = host;
@@ -439,15 +440,16 @@ class RemoteResource{
 
 	}
 
-	RemoteResource(OCRepresentation &rep_device, std::string host){
+	RemoteResource(std::string device,OCRepresentation &rep_device, std::string host){
 	    isRaspberry = false;
+	    mDevice= device;
 	    mRep_device = rep_device;
 	    mHost = host;
 	    createConstructResourceObject(mRep_device,true);
 	}
 
 	~RemoteResource(){
-
+	    std::cout << "RemoteResource 소멸자 호출 " << std::endl;
 	}
 
 	OCRepresentation getDeviceRep(){
@@ -466,20 +468,6 @@ class RemoteResource{
 	    return manage;
 	}
 
-
-	void * startDeviceValue(void * data){
-	  
-	  /*while(1){
-		if(device){
-		    QueryParamsMap q;
-		    device -> get(q,g_cb);
-		}else{
-		    std::cout << "Error: DEVICEResource Object construction returned null\n";
-		}
-		sleep(10);
-
-	    }*/
-	}
 
 	void requestPut(OCResource::Ptr ptr,OCRepresentation &rep){ 
 	    QueryParamsMap q;
@@ -721,11 +709,16 @@ void registerRemoteResource(const OCRepresentation& rep){
 	if(rep_manage.count(device)){
 	    //rsapberry pi
 	    if(!checkResourceAdded(device)){
-		std::cout << device << "@@@@@@@@@@@@@@@@@\n";	
-		RemoteResource *rr = ::new RemoteResource(rep_device.find(device)-> second,rep_manage.find(device) -> second,host); 
+		std::cout << device << " device new added \n";	
+		RemoteResource *rr = ::new RemoteResource(device,rep_device.find(device)-> second,rep_manage.find(device) -> second,host); 
 		remoteResource.insert(pair<std::string,RemoteResource*>(device,rr));
 	    }else{
-		remoteResource.find(device) -> second -> timestamp = now();
+		std::string host1 = rep.getHost(); // found resource host
+		std::string host2 = remoteResource.find(device)->second -> mHost; // saved resource host 	
+		
+		if(host1.compare(host2) ==0){
+		    remoteResource.find(device) -> second -> timestamp = now();
+		}
 	    }
 
 	}else{
@@ -839,23 +832,30 @@ void foundResource(std::shared_ptr<OCResource> resource)
 }
 
 
-void * startDeviceServerResource(void *param){
+void * scanDeviceServerResource(void *param){
 
     std::ostringstream requestURI;
     requestURI << OC_RSRVD_WELL_KNOWN_URI << "?rt="+ RESOURCE_TYPE_SERVER;
 
     while(1){
-	std::cout << "---- start findResource ----\n";
+	std::cout << "---- start findResource! ----\n";
 	OCPlatform::findResource("",requestURI.str(),CT_DEFAULT,&foundResource);
       	
-	
+	std::vector<RemoteResource*> rm_v;
 	for(auto it = remoteResource.begin();it!= remoteResource.end();it++){
 	    auto rr = it->second;
 	    if(now() - rr->timestamp >= 30){
 		std::cout << "over 30 minute remove remoteResource" << std::endl;
+		rm_v.push_back(rr);
 	    }else{
 		rr -> requestGet( rr->getDevicePtr());
-	    }	
+	    }
+	}
+
+
+	for(int i =0 ; i<rm_v.size();i++){
+	    remoteResource.erase(rm_v[i]->mDevice);
+	    delete rm_v[i];
 	}
 
 	sleep(10);
@@ -1004,11 +1004,11 @@ void startAgentServer(){
     static int startedThread = 0;
 
     if(!startedThread){
-	pthread_create(&threadId,NULL,startDeviceServerResource,(void *)startedThread);
+	pthread_create(&threadId,NULL,scanDeviceServerResource,(void *)startedThread);
 	startedThread =1;
     }
 
-    //startDeviceServerResource();
+    //scanDeviceServerResource();
 }
 
 
@@ -1056,7 +1056,7 @@ int main (){
 	    return -1;
 	}	    
 	if(opt == 1){
-	    startDeviceServer();
+	    //startDeviceServer();
 	    startAgentServer();
 	}else if(opt ==2){
 	    startDeviceServer();
