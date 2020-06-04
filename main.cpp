@@ -5,12 +5,16 @@
 #include <cstdlib>
 #include <mutex>
 #include <condition_variable>
-
 #include <time.h>
+
+//#include <wiringPi.h>
+#include <wiringPiI2C.h>
+
 
 #include "iotivity_config.h"
 #include "OCPlatform.h"
 #include "OCApi.h"
+
 
 using namespace OC;
 using namespace std;
@@ -19,8 +23,7 @@ namespace PH = std::placeholders;
 int GET_REQ_PERIOD = 10000;
 int RESOURCE_SCAN_PERIOD = 10000;
 
-string DEVICE_TEMP = "temp";
-string DEVICE_HUMI = "humi";
+string DEVICE_TEMP_HUMI = "temp_humi";
 string DEVICE_FAN = "fan";
 
 string DEVICE_A = "A";
@@ -37,11 +40,14 @@ string RESOURCE_URI_SERVER = "/server";
 string RESOURCE_URI_AGENT = "/agent";
 
 
+//core device type
 string RESOURCE_TYPE_MANAGEMENT = "etri.device.mgt";
 string RESOURCE_TYPE_DEVICE = "etri.device";
 string RESOURCE_TYPE_SERVER = "etri.server";
 string RESOURCE_TYPE_AGENT = "etri.agent";
 
+//sub device type
+std::string RESOURCE_SUB_TYPE_SENSOR ="etri.sensor";
 
 // platform Info
 std::string gPlatformId = "0A3E0D6F-DBF5-404E-8719-D6880042463A";
@@ -90,28 +96,34 @@ class Resource
 	    if(OC_STACK_OK != result)
 	    {
 		throw std::runtime_error(
-			std::string("Device Resource failed to unregister/delete") + std::to_string(result));
+			std::string("Device Resource failed to unregister/delete.") + std::to_string(result));
 	    }
 	}
 };
 
 
+#define SHT_DEVICE_ID 0x44
 class DeviceResource : public Resource
 {
     public:
 	int mValue;
+	std::string mDevice;
 	DcResource *mDcResource;
+	bool running = false;
+	int fd = -1;
 
 	DeviceResource(std::string device, DcResource& dcResource)
 	{
+
 	    mDcResource = &dcResource;
+	    mDevice = device;
 	    std::string resourceURI = RESOURCE_URI_DEVICE+device;
 	    std::string resourceTypeName = RESOURCE_TYPE_DEVICE;
 	    std::string resourceInterface = DEFAULT_INTERFACE;
+
 	    //m_rep = rep;
 	    EntityHandler cb = std::bind(&DeviceResource::entityHandler, this,PH::_1);
 	    uint8_t resourceProperty = OC_DISCOVERABLE | OC_OBSERVABLE;
-
 
 	    OCStackResult result = OCPlatform::registerResource(m_resourceHandle,
 		    resourceURI,
@@ -125,24 +137,81 @@ class DeviceResource : public Resource
 		throw std::runtime_error(
 			std::string("Light Resource failed to start")+std::to_string(result));
 	    }else{
+		// test dummy
 		mValue =99;
+		m_rep.setValue("value",mValue);
+
 		std::vector<std::string> resourceTypes = {resourceTypeName};
 		std::vector<std::string> resourceInterfaces = {resourceInterface};
 
+		if(0==device.compare(DEVICE_TEMP_HUMI)){
+		    resourceTypes.push_back(RESOURCE_SUB_TYPE_SENSOR);
+		}
 		m_rep.setUri(resourceURI);
 		m_rep.setResourceTypes(resourceTypes);
 		m_rep.setResourceInterfaces(resourceInterfaces);
 	    }
 	}
 
+
+
 	~DeviceResource(){
 	    unregisterResource();
 	    std::cout << "DeviceResource 소멸자 호출" << std::endl;
 	}
+
+	void start(){
+	    if(running){
+		std::cout << "thread already running\n"
+		return;
+	    }
+
+	    running = true;
+	    std::thread thrd = std::thread(&DeviceResource::update,this);
+	    thrd.detach();
+	}
+	void stop(){
+	    running = false;
+	}
+
+	void update(){
+	    std::cout << mDevice << std::endl;
+	    std::cout << DEVICE_TEMP_HUMI << std::endl;
+	    if(0==mDevice.compare(DEVICE_TEMP_HUMI)){
+		fd = wiringPiI2CSetup(SHT_DEVICE_ID);
+
+		if(fd != -1 ){
+		    while(running){
+			char config[2] = {0};
+			config[0] = 0x24;
+			config[1] = 0x0b;
+			write(fd,config,2);
+			sleep(1);
+
+			char i2c_rx_buf[6] = {0};
+			read(fd,i2c_rx_buf,6);
+
+			float temp = (float)((float)175.0 * (float)(i2c_rx_buf[0] * 0x100 + i2c_rx_buf[1]) / (float)65535.0 - 45.0);
+			float humi = (float)((float)100.0 * (float)(i2c_rx_buf[3] * 0x100 + i2c_rx_buf[4]) / (float)65535.0);
+
+			std::cout<< temp << std::endl;
+			std::cout<<humi << std::endl;
+
+			m_rep.setValue("temp",temp);
+			m_rep.setValue("humi",humi);
+			sleep(1);
+		    }
+
+		}
+	    }else {
+
+
+	    }
+	}
+
 	//private:
 	OCRepresentation get()
 	{
-	    m_rep.setValue("value",mValue);
 	    return m_rep;
 	}
 
@@ -287,6 +356,12 @@ class DcResource : public Resource
 			pResponse->setResourceRepresentation(get());
 			if(OC_STACK_OK == OCPlatform::sendResponse(pResponse))
 			{
+			    std::cout << mValue << std::endl;
+			    if(mValue){
+				mDeviceResource -> start();
+			    }else{
+				mDeviceResource -> stop();
+			    }
 			    ehResult = OC_EH_OK;
 			}
 		    }
@@ -428,7 +503,7 @@ class RemoteResource{
 
 	PutCallback p_cb = std::bind(&RemoteResource::onPut, this,PH::_1,PH::_2,PH::_3);
 	GetCallback g_cb = std::bind(&RemoteResource::onGet, this,PH::_1,PH::_2,PH::_3);
-	
+
 	RemoteResource(std::string device,OCRepresentation &rep_device, OCRepresentation &rep_manage, std::string host) {
 	    isRaspberry = true;
 	    mDevice = device;
@@ -480,11 +555,11 @@ class RemoteResource{
 	}
 
 
-	
+
 	void createConstructResourceObject(OCRepresentation &rep, bool isDevice){
 	    OCConnectivityType connectivityType = CT_ADAPTER_IP;
 
-	   
+
 	    if(isDevice){
 		device = OC::OCPlatform::constructResourceObject(
 			mHost,
@@ -537,7 +612,7 @@ class RemoteResource{
 		    std::cout << "RemoteResource GET request was successful uri : "+rep.getUri()  << std::endl;
 		    std::string uri(rep.getUri());
 
-		   if(std::string::npos != uri.find(RESOURCE_URI_MANAGEMENT))
+		    if(std::string::npos != uri.find(RESOURCE_URI_MANAGEMENT))
 		    {
 			mRep_manage = rep;
 		    }
@@ -718,7 +793,7 @@ void registerRemoteResource(const OCRepresentation& rep){
 	    }else{
 		std::string host1 = rep.getHost(); // found resource host
 		std::string host2 = remoteResource.find(device)->second -> mHost; // saved resource host 	
-		
+
 		if(host1.compare(host2) ==0){
 		    remoteResource.find(device) -> second -> timestamp = now();
 		}
@@ -841,7 +916,7 @@ void * scanDeviceServerResource(void *param){
     requestURI << OC_RSRVD_WELL_KNOWN_URI << "?rt="+ RESOURCE_TYPE_SERVER;
 
     while(1){
-      	
+
 
 	std::cout << "---- start findResource! ----\n";
 	OCPlatform::findResource("",requestURI.str(),CT_DEFAULT,&foundResource);
@@ -862,7 +937,7 @@ void * scanDeviceServerResource(void *param){
 	    remoteResource.erase(rm_v[i]->mDevice);
 	    delete rm_v[i];
 	}
-	
+
 	sleep(10);
     }
 
@@ -974,8 +1049,7 @@ OCStackResult SetDeviceInfo(int opt)
 
 std::vector<string> getAvailableDevices(){
     std::vector<string> devices = {
-	DEVICE_TEMP,
-	DEVICE_HUMI,
+	DEVICE_TEMP_HUMI,
 	DEVICE_FAN
     } ;
     return devices;
@@ -1025,7 +1099,6 @@ int main (){
     std::cout << "    2 - DeviceServer\n";
     std::cin >> opt; 
 
-
     PlatformConfig cfg(
 	    OC::ServiceType::InProc,
 	    OC::ModeType::Both,
@@ -1059,16 +1132,25 @@ int main (){
 	if(result != OC_STACK_OK){
 	    cout << "Device Registration failed\n";
 	    return -1;
-	}	    
+	}
+
+
 	if(opt == 1){
-	    //startDeviceServer();
-	    startAgentServer();
-	}else if(opt ==2){
-	    startDeviceServer();
+	    // agentserver
+	}else if(opt==2){
+	    // deviceserver
 	}else{
 	    std::cout << "invalid value\n";
 	    return -1;
 	}
+
+
+	// start DeviceServer , AgentServer
+	startDeviceServer();
+	if(opt == 1){
+	    startAgentServer();
+	}
+
 
 	DeletePlatformInfo();
 	std::mutex blocker;

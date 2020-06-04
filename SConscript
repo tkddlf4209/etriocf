@@ -19,15 +19,15 @@
 #-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
 Import('examples_env')
-
 examples_env.AppendUnique(CPPPATH=[
     Dir('.').srcnode().path
 ])
-
 #--- Way to build partically cpp files
 ocf_light_files = [
     'main.cpp',
 ]
+#examples_env.AppendUnique(LIBPATH='#/resource/examples/etriocf//WiringPi/wiringPi',LIBS='wiringPi')
+
 examples_env.Program(ocf_light_files)
 #output = examples_env.Program(Glob('*.cpp'))
 
