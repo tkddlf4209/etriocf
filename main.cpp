@@ -7,7 +7,7 @@
 #include <condition_variable>
 #include <time.h>
 
-//#include <wiringPi.h>
+#include <wiringPi.h>
 #include <wiringPiI2C.h>
 
 
@@ -48,6 +48,8 @@ string RESOURCE_TYPE_AGENT = "etri.agent";
 
 //sub device type
 std::string RESOURCE_SUB_TYPE_SENSOR ="etri.sensor";
+std::string RESOURCE_SUB_TYPE_CONTROL ="etri.control";
+
 
 // platform Info
 std::string gPlatformId = "0A3E0D6F-DBF5-404E-8719-D6880042463A";
@@ -103,6 +105,8 @@ class Resource
 
 
 #define SHT_DEVICE_ID 0x44
+
+#define LED 25 // BCM : 26 , WPi : 25
 class DeviceResource : public Resource
 {
     public:
@@ -144,8 +148,16 @@ class DeviceResource : public Resource
 		std::vector<std::string> resourceTypes = {resourceTypeName};
 		std::vector<std::string> resourceInterfaces = {resourceInterface};
 
-		if(0==device.compare(DEVICE_TEMP_HUMI)){
+
+		if(0==mDevice.compare(DEVICE_TEMP_HUMI)){
 		    resourceTypes.push_back(RESOURCE_SUB_TYPE_SENSOR);
+		    m_rep.setValue("temp",-1);
+		    m_rep.setValue("humi",-1);
+		}else if(0 == mDevice.compare(DEVICE_FAN)){
+		    ledOff();
+		    //pinMode(LED,INPUT);
+		    resourceTypes.push_back(RESOURCE_SUB_TYPE_CONTROL);
+		   // m_rep.setValue("control",-1);
 		}
 		m_rep.setUri(resourceURI);
 		m_rep.setResourceTypes(resourceTypes);
@@ -161,50 +173,91 @@ class DeviceResource : public Resource
 	}
 
 	void start(){
-	    if(running){
-		std::cout << "thread already running\n"
-		return;
+	    if(0==mDevice.compare(DEVICE_TEMP_HUMI)){
+		if(running){
+		    std::cout << "thread already running\n";
+		    return;
+		}
+
+		running = true;
+		std::thread thrd = std::thread(&DeviceResource::getTempHumi,this);
+		thrd.detach();
+	    }else if(0==mDevice.compare(DEVICE_FAN)){
+		// pinMode(LED,OUTPUT);
+		/*if(running){
+		    std::cout << "thread already running\n";
+		    return;
+		}
+
+		running = true;
+		std::thread thrd = std::thread(&DeviceResource::changeLed,this);
+		thrd.detach();
+		*/
+
 	    }
 
-	    running = true;
-	    std::thread thrd = std::thread(&DeviceResource::update,this);
-	    thrd.detach();
 	}
 	void stop(){
 	    running = false;
+	    if(0==mDevice.compare(DEVICE_FAN)){
+		ledOff();
+	    }
 	}
 
-	void update(){
-	    std::cout << mDevice << std::endl;
-	    std::cout << DEVICE_TEMP_HUMI << std::endl;
-	    if(0==mDevice.compare(DEVICE_TEMP_HUMI)){
-		fd = wiringPiI2CSetup(SHT_DEVICE_ID);
+	void ledOn(){	
+		m_rep.setValue("control",1);
+	        
+		pinMode(LED,OUTPUT);
+		digitalWrite(LED,0);
+		//delay(10);
+		digitalWrite(LED,1);
+	}
 
-		if(fd != -1 ){
-		    while(running){
-			char config[2] = {0};
-			config[0] = 0x24;
-			config[1] = 0x0b;
-			write(fd,config,2);
-			sleep(1);
+	void ledOff(){
+		m_rep.setValue("control",0);
+		
+		pinMode(LED,INPUT);
+		//idigitalWrite(LED,1);
+		//delay(10);
+		//digitalWrite(LED,0);
 
-			char i2c_rx_buf[6] = {0};
-			read(fd,i2c_rx_buf,6);
+	}
+	/*void changeLed(){
+	    pinMode(LED,OUTPUT);
+	    std::cout << "start chagneLED Thread " <<std::endl;
+	    while(running){
+		digitalWrite(LED,1);
+		delay(500);
+		digitalWrite(LED,0);
+		delay(500);
+	    }
+	}*/
 
-			float temp = (float)((float)175.0 * (float)(i2c_rx_buf[0] * 0x100 + i2c_rx_buf[1]) / (float)65535.0 - 45.0);
-			float humi = (float)((float)100.0 * (float)(i2c_rx_buf[3] * 0x100 + i2c_rx_buf[4]) / (float)65535.0);
+	void getTempHumi(){
+	    std::cout << "start getTempHumi thread" << std::endl;
+	    fd = wiringPiI2CSetup(SHT_DEVICE_ID);
 
-			std::cout<< temp << std::endl;
-			std::cout<<humi << std::endl;
+	    if(fd != -1 ){
+		while(running){
+		    char config[2] = {0};
+		    config[0] = 0x24;
+		    config[1] = 0x0b;
+		    write(fd,config,2);
+		    sleep(1);
 
-			m_rep.setValue("temp",temp);
-			m_rep.setValue("humi",humi);
-			sleep(1);
-		    }
+		    char i2c_rx_buf[6] = {0};
+		    read(fd,i2c_rx_buf,6);
 
+		    float temp = (float)((float)175.0 * (float)(i2c_rx_buf[0] * 0x100 + i2c_rx_buf[1]) / (float)65535.0 - 45.0);
+		    float humi = (float)((float)100.0 * (float)(i2c_rx_buf[3] * 0x100 + i2c_rx_buf[4]) / (float)65535.0);
+
+		    std::cout<< temp << std::endl;
+		    std::cout<<humi << std::endl;
+
+		    m_rep.setValue("temp",temp);
+		    m_rep.setValue("humi",humi);
+		    sleep(1);
 		}
-	    }else {
-
 
 	    }
 	}
@@ -241,13 +294,31 @@ class DeviceResource : public Resource
 			    ehResult = OC_EH_OK;
 			}
 		    }
-		    else
+		    else if(request->getRequestType() =="PUT")
 		    {
-			std::cout << "DeviceResource unsupported request type"
-			    << request->getRequestType() << std::endl;
+			if(0==mDevice.compare(DEVICE_TEMP_HUMI)){
+
+			}else if(0==mDevice.compare(DEVICE_FAN)){
+			
+			    OCRepresentation rep = request->getResourceRepresentation();
+			    
+			    int control = 0;
+			    if(rep.getValue("control",control)){
+				if(control == 1){
+				    ledOn(); 
+				}else{
+				    ledOff();
+				}
+			    }
+
+			}
+
 			pResponse->setResponseResult(OC_EH_ERROR);
 			OCPlatform::sendResponse(pResponse);
 			ehResult = OC_EH_ERROR;
+		    }else{
+			std::cout << "DeviceResource unsupported request type"
+			    << request->getRequestType() << std::endl;
 		    }
 		}
 		else
@@ -512,7 +583,6 @@ class RemoteResource{
 	    mHost = host;
 	    createConstructResourceObject(mRep_device,true);
 	    createConstructResourceObject(mRep_manage,false);
-
 	}
 
 	RemoteResource(std::string device,OCRepresentation &rep_device, std::string host){
@@ -528,10 +598,12 @@ class RemoteResource{
 	}
 
 	OCRepresentation getDeviceRep(){
+	    mRep_device.setValue("host",mHost);
 	    return mRep_device;
 	}
 
 	OCRepresentation getManageRep(){
+	    mRep_manage.setValue("host",mHost);
 	    return mRep_manage;
 	}
 
@@ -1146,9 +1218,12 @@ int main (){
 
 
 	// start DeviceServer , AgentServer
-	startDeviceServer();
 	if(opt == 1){
 	    startAgentServer();
+	}else{
+	    if(wiringPiSetup()== -1)
+		return -1;	    
+	    startDeviceServer();
 	}
 
 
