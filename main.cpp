@@ -142,8 +142,6 @@ class DeviceResource : public Resource
 			std::string("Light Resource failed to start")+std::to_string(result));
 	    }else{
 		// test dummy
-		mValue =99;
-		m_rep.setValue("value",mValue);
 
 		std::vector<std::string> resourceTypes = {resourceTypeName};
 		std::vector<std::string> resourceInterfaces = {resourceInterface};
@@ -158,6 +156,9 @@ class DeviceResource : public Resource
 		    //pinMode(LED,INPUT);
 		    resourceTypes.push_back(RESOURCE_SUB_TYPE_CONTROL);
 		   // m_rep.setValue("control",-1);
+		}else{
+		    mValue =-1;
+		    m_rep.setValue("value",mValue);
 		}
 		m_rep.setUri(resourceURI);
 		m_rep.setResourceTypes(resourceTypes);
@@ -731,7 +732,8 @@ class AgentServerResource:public Resource
 		    resourceTypeName,
 		    resourceInterface,
 		    cb,
-		    resourceProperty);
+		    resourceProperty
+		    );
 
 	    if(OC_STACK_OK != result)
 	    {
@@ -996,7 +998,7 @@ void * scanDeviceServerResource(void *param){
 	std::vector<RemoteResource*> rm_v;
 	for(auto it = remoteResource.begin();it!= remoteResource.end();it++){
 	    auto rr = it->second;
-	    if(now() - rr->timestamp >= 30){
+	    if(now() - rr->timestamp >= 15){
 		std::cout << "over 30 minute remove remoteResource" << std::endl;
 		rm_v.push_back(rr);
 	    }else{
@@ -1010,7 +1012,7 @@ void * scanDeviceServerResource(void *param){
 	    delete rm_v[i];
 	}
 
-	sleep(10);
+	sleep(5);
     }
 
 }
